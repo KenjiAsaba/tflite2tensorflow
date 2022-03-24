@@ -5578,12 +5578,23 @@ def make_graph(
 
 def main():
     parser = argparse.ArgumentParser()
-    parser.add_argument('--model_path', type=str, required=True, help='input tflite model path (*.tflite)')
-    parser.add_argument('--flatc_path', type=str, required=True, help='flatc file path (flatc)')
-    parser.add_argument('--schema_path', type=str, required=True, help='schema.fbs path (schema.fbs)')
+    parser.add_argument('--model_path', type=str, 
+                        #required=True, 
+                        default='magenta_arbitrary-image-stylization-v1-256_fp16_transfer_1.tflite', 
+                        help='input tflite model path (*.tflite)')
+    parser.add_argument('--flatc_path', type=str, 
+                        #required=True, 
+                        default='flatc',
+                        help='flatc file path (flatc)')
+    parser.add_argument('--schema_path', type=str, 
+                        #required=True, 
+                        default='resource/schema.fbs',
+                        help='schema.fbs path (schema.fbs)')
 
     parser.add_argument('--model_output_path', type=str, default='saved_model', help='The output folder path of the converted model file')
-    parser.add_argument('--output_pb', action='store_true', help='.pb output switch')
+    parser.add_argument('--output_pb', action='store_true', 
+                        default=True,
+                        help='.pb output switch')
     parser.add_argument('--output_no_quant_float32_tflite', action='store_true', help='float32 tflite output switch')
     parser.add_argument('--output_dynamic_range_quant_tflite', action='store_true', help='dynamic quant tflite output switch')
     parser.add_argument('--output_weight_quant_tflite', action='store_true', help='weight quant tflite output switch')
