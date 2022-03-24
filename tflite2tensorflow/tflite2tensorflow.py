@@ -259,6 +259,7 @@ def parse_json(jsonfile_path):
     return ops, json_tensor_details, op_types, j
 
 
+
 def read_int(buffer, offset, bit_size):
     size = 1 << bit_size
     format_char = 'bhiq'[bit_size]
@@ -5797,7 +5798,7 @@ def main():
         optimizing_for_openvino_and_myriad = True
 
     if tfv1_flg:
-        from tensorflow.lite.python.interpreter import Interpreter as tflite_interpreter
+        #from tensorflow.lite.python.interpreter import Interpreter as tflite_interpreter
 
         shutil.rmtree(model_output_path, ignore_errors=True)
 
@@ -5805,11 +5806,14 @@ def main():
         gen_model_json(flatc_path, model_output_path, jsonfile_path, schema_path, model_path)
         ops, json_tensor_details, op_types, full_json = parse_json(jsonfile_path)
 
-        interpreter = tflite_interpreter(model_path)
-        interpreter.allocate_tensors()
-        input_details = interpreter.get_input_details()
-        output_details = interpreter.get_output_details()
-        ops_details = interpreter._get_ops_details()
+        #interpreter = tflite_interpreter(model_path)
+        #interpreter.allocate_tensors()
+        #input_details = interpreter.get_input_details()
+        input_details = get_input_details_from_json(full_json)
+        #output_details = interpreter.get_output_details()
+        output_details = get_output_details_from_json(full_json)
+        #ops_details = interpreter._get_ops_details()
+        ops_details = get_operator_details_from_json(full_json)
         ops_details_pd = pd.json_normalize(ops_details, sep='_')
 
         print('inputs:')
@@ -5957,19 +5961,21 @@ def main():
         # Tensorflow v2.x
         import tensorflow as tf
         import tensorflow_datasets as tfds
-        try:
-            # Custom TFLite Interpreter that implements MediaPipe's custom operations.
-            # TensorFlow v2.4.1
-            # https://zenn.dev/pinto0309/articles/a0e40c2817f2ee
-            from tflite_runtime.interpreter import Interpreter as tflite_interpreter
-        except:
-            # The official TensorFlow TFLite Interpreter
-            from tensorflow.lite.python.interpreter import Interpreter as tflite_interpreter
+        #try:
+        #    # Custom TFLite Interpreter that implements MediaPipe's custom operations.
+        #    # TensorFlow v2.4.1
+        #    # https://zenn.dev/pinto0309/articles/a0e40c2817f2ee
+        #    from tflite_runtime.interpreter import Interpreter as tflite_interpreter
+        #except:
+        #    # The official TensorFlow TFLite Interpreter
+        #    from tensorflow.lite.python.interpreter import Interpreter as tflite_interpreter
 
-        interpreter = tflite_interpreter(model_path)
-        interpreter.allocate_tensors()
-        input_details = interpreter.get_input_details()
-        output_details = interpreter.get_output_details()
+        #interpreter = tflite_interpreter(model_path)
+        #interpreter.allocate_tensors()
+        #input_details = interpreter.get_input_details()
+        input_details = get_input_details_from_json(full_json)
+        #output_details = interpreter.get_output_details()
+        output_details = get_output_details_from_json(full_json)
         print('inputs:')
         input_node_names = []
         tf_inputs = []
