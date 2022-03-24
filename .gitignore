@@ -1,3 +1,5 @@
 build/
 dist/
 tflite2tensorflow.egg-info/
+env/
+.vs/
