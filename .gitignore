@@ -3,7 +3,3 @@ dist/
 tflite2tensorflow.egg-info/
 env/
 .vs/
-flatbuffers/1.12.0/flatc.exe
-magenta_arbitrary-image-stylization-v1-256_fp16_transfer_1.json
-magenta_arbitrary-image-stylization-v1-256_fp16_transfer_1.tflite
-resource
