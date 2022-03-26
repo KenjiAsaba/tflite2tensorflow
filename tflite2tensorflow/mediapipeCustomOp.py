@@ -1,12 +1,118 @@
 # Copyright 2022 Akiya Research Institute, Inc. All Rights Reserved
 
 import tensorflow.compat.v1 as tf
+import numpy as np
+
+def TransformLandmarks(operator, custom_options, tensors, interpreter):
+    # get args
+    landmarks2d = tensors[operator['inputs'][0]] #float32 [b,80,2] landmarks 2d
+    mat = tensors[operator['inputs'][1]] #float32 [b,4,4] affine transform matrix
+    b = landmarks2d.shape[0]
+
+    # extract important values
+    mat_rot = mat[:,0:2,0:2] #[b,2,2]
+    translation = mat[:,0:2,3] #[b,2]
+    translation = tf.expand_dims(translation, axis=1) #[1,1,2]
+
+    # Find the corresponding point in the input image
+    landmarks2d_transformed = tf.matmul(landmarks2d, mat_rot, transpose_b=True) #[b,80,2]
+    landmarks2d_transformed = tf.add(landmarks2d_transformed, translation) #[b,80,2]
+    return landmarks2d_transformed
+
+#TODO test
+#Affine transform tensor. Interpolate values by bilinear.
+def TransformTensorBilinear(operator, custom_options, tensors, interpreter):
+    # get args
+    features = tensors[operator['inputs'][0]] #float32 [b,48,48,32] feature maps
+    mat = tensors[operator['inputs'][1]] #float32 [b,4,4] affine transform matrix
+    w = custom_options['output_width']
+    h = custom_options['output_height']
+    b = features.shape[0]
+    input_h = features.shape[1]
+    input_w = features.shape[2]
+
+    # extract important values
+    mat_rot = mat[:,0:2,0:2] #[b,2,2]
+    translation = mat[:,0:2,3] #[b,2]
+    translation = tf.expand_dims(translation, axis=1) #[1,1,2]
+    translation = tf.expand_dims(translation, axis=1) #[1,1,1,2]
+
+    # construct const tensors
+    ones = tf.ones([b, h, w], dtype=tf.int32) #[b,h,w]
+    zeros = tf.ones([b, h, w], dtype=tf.int32) #[b,h,w]
+    one_zeros = tf.stack([ones, zeros], axis=3) #[b,h,w,2] = [[[1,0], [1,0] ...
+    zero_ones = tf.stack([zeros, ones], axis=3) #[b,h,w,2] = [[[0,1], [0,1] ...
+    one_ones = tf.ones([b, h, w, 2], dtype=tf.int32) #[b,h,w,2] = [[[1,1], [1,1] ...
+    zero_zeros = tf.zeros([b, h, w, 2], dtype=tf.int32) #[b,h,w,2] = [[[0,0], [0,0] ...
+
+    # construct output image coordinates
+    # out_coord = [[[ 0,0],[ 0,1],[ 0,2],...,[0,15]],
+    #              [[ 1,0],[ 1,1],[ 1,2],...,[1,15]],
+    #              ...
+    #              [[15,0],[15,1],[15,2],...,[15,15]]]
+    array_w = np.arange(w) #[0,1,2,...,15]
+    array_h = np.arange(h) #[0,1,2,...,15]
+    X, Y = tf.meshgrid(array_w, array_h) #[h,w]
+    out_coord = tf.stack([X,Y], axis=2) #[h,w,2]
+    out_coord = tf.expand_dims(out_coord, axis=0) #[1,h,w,2]
+    out_coord = tf.tile(out_coord, [b,1,1,1]) #[b,h,w,2]
+    out_coord = tf.cast(out_coord, dtype=tf.float32)
+
+    # Find the corresponding point in the input image
+    in_coord = tf.matmul(out_coord, mat_rot, transpose_b=True) #[b,h,w,2]
+    in_coord = tf.add(in_coord, translation) #[b,h,w,2]
+
+    # Find the weights for the nearest 4 points
+    in_coord_floor = tf.floor(in_coord) #[b,h,w,2]
+    weight_ceil_ = tf.subtract(in_coord, in_coord_floor) #[b,h,w,2]
+    weight_floor = tf.subtract(tf.ones([b, h, w, 2]), weight_ceil_) #[b,h,w,2]
+    weight_ceilX = tf.multiply(weight_ceil_[:,:,:,0], weight_floor[:,:,:,1]) #[b,h,w]
+    weight_ceilY = tf.multiply(weight_floor[:,:,:,0], weight_ceil_[:,:,:,1]) #[b,h,w]
+    weight_ceil_ = tf.multiply(weight_ceil_[:,:,:,0], weight_ceil_[:,:,:,1]) #[b,h,w]
+    weight_floor = tf.multiply(weight_floor[:,:,:,0], weight_floor[:,:,:,1]) #[b,h,w]
+    weight_ceilX = tf.expand_dims(weight_ceilX, axis=3) #[b,h,w,1]
+    weight_ceilY = tf.expand_dims(weight_ceilY, axis=3) #[b,h,w,1]
+    weight_ceil_ = tf.expand_dims(weight_ceil_, axis=3) #[b,h,w,1]
+    weight_floor = tf.expand_dims(weight_floor, axis=3) #[b,h,w,1]
+
+    # Find nearest 4 points. 
+    in_coord_floor = tf.cast(out_coord, dtype=tf.int32)
+    in_coord_ceilX = tf.add(in_coord_floor, one_zeros) #[b,h,w,2]
+    in_coord_ceilY = tf.add(in_coord_floor, zero_ones) #[b,h,w,2]
+    in_coord_ceil_ = tf.add(in_coord_floor, one_ones) #[b,h,w,2]
+    # Make sure they are in the input image
+    in_coord_floor = tf.minimum(in_coord_floor, [[[[input_w, input_h]]]]) #[b,h,w,2]
+    in_coord_ceilX = tf.minimum(in_coord_ceilX, [[[[input_w, input_h]]]]) #[b,h,w,2]
+    in_coord_ceilY = tf.minimum(in_coord_ceilY, [[[[input_w, input_h]]]]) #[b,h,w,2]
+    in_coord_ceil_ = tf.minimum(in_coord_ceil_, [[[[input_w, input_h]]]]) #[b,h,w,2]
+    in_coord_floor = tf.maximum(in_coord_floor, zero_zeros) #[b,h,w,2]
+    in_coord_ceilX = tf.maximum(in_coord_ceilX, zero_zeros) #[b,h,w,2]
+    in_coord_ceilY = tf.maximum(in_coord_ceilY, zero_zeros) #[b,h,w,2]
+    in_coord_ceil_ = tf.maximum(in_coord_ceil_, zero_zeros) #[b,h,w,2]
+
+    # calc final pixel value
+    value_floor = tf.gather_nd(params=features, indices=in_coord_floor, batch_dims=1) #[b,h,w,32]
+    value_ceilX = tf.gather_nd(params=features, indices=in_coord_ceilX, batch_dims=1) #[b,h,w,32]
+    value_ceilY = tf.gather_nd(params=features, indices=in_coord_ceilY, batch_dims=1) #[b,h,w,32]
+    value_ceil_ = tf.gather_nd(params=features, indices=in_coord_ceil_, batch_dims=1) #[b,h,w,32]
+    value_floor_fraction = tf.multiply(value_floor, weight_floor)
+    value_ceil__fraction = tf.multiply(value_ceil_, weight_ceil_)
+    value_ceilX_fraction = tf.multiply(value_ceilX, weight_ceilX)
+    value_ceilY_fraction = tf.multiply(value_ceilY, weight_ceilY)
+
+    #[b,h,w,32]
+    value = tf.add(
+        tf.add(value_floor_fraction, value_ceil__fraction),
+        tf.add(value_ceilX_fraction, value_ceilY_fraction)
+        )
+
+    return value
 
 #TODO test
 # Left indexとRight indexで指定されたLandmarkを結ぶ線が水平になり、Subset indicesで指定されたLandmrakをちょうど含むような範囲をcropするように、元の画像をAffine変換する行列
 # の逆行列を求める。なぜ、逆行列かといういうと、後の計算で使うのが逆行列だから。
-def landmarks2transformMatrix(operator, custom_options, tensors, interpreter):
-    landmarks3d = tensors[operator['inputs'][0]] #float32[b,468,3] landmarks
+def Landmarks2TransformMatrix(operator, custom_options, tensors, interpreter):
+    landmarks3d = tensors[operator['inputs'][0]] #float32 [b,468,3] landmarks
     landmarks2d = landmarks3d[:,:,0:2] # [b,468,2]
 
     ######################################
