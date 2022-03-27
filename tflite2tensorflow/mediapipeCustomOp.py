@@ -3,10 +3,10 @@
 import tensorflow.compat.v1 as tf
 import numpy as np
 
-def TransformLandmarks(operator, custom_options, tensors, interpreter):
+def TransformLandmarks(operator, custom_options, tensors, interpreter, landmarks2d, mat):
     # get args
-    landmarks2d = tensors[operator['inputs'][0]] #float32 [b,80,2] landmarks 2d
-    mat = tensors[operator['inputs'][1]] #float32 [b,4,4] affine transform matrix
+    #landmarks2d = tensors[operator['inputs'][0]] #float32 [b,80,2] landmarks 2d
+    #mat = tensors[operator['inputs'][1]] #float32 [b,4,4] affine transform matrix
     b = landmarks2d.shape[0]
 
     # extract important values
@@ -111,9 +111,10 @@ def TransformTensorBilinear(operator, custom_options, tensors, interpreter):
 #TODO test
 # Left indexとRight indexで指定されたLandmarkを結ぶ線が水平になり、Subset indicesで指定されたLandmrakをちょうど含むような範囲をcropするように、元の画像をAffine変換する行列
 # の逆行列を求める。なぜ、逆行列かといういうと、後の計算で使うのが逆行列だから。
-def Landmarks2TransformMatrix(operator, custom_options, tensors, interpreter):
-    landmarks3d = tensors[operator['inputs'][0]] #float32 [b,468,3] landmarks
+def Landmarks2TransformMatrix(operator, custom_options, tensors, interpreter, landmarks3d):
+    #landmarks3d = tensors[operator['inputs'][0]] #float32 [b,468,3] landmarks
     landmarks2d = landmarks3d[:,:,0:2] # [b,468,2]
+    b = landmarks3d.shape[0]
 
     ######################################
     # get rotation
@@ -139,21 +140,23 @@ def Landmarks2TransformMatrix(operator, custom_options, tensors, interpreter):
     #                [ dy,  dx]]
     u = tf.expand_dims(u, axis=1) #[b,1,2]
     v = tf.expand_dims(v, axis=1) #[b,1,2]
-    mat_rot_inv = tf.concat([u, v], axis=1) #[b,2,2]
-    mat_rot = tf.transpose(mat_rot_inv, perm=[0,2,1]) #[b,2,2]
+    mat_rot_inv = tf.concat([u, v], axis=1) #[b,2,2] 切り取り後の画像座標から、切り取り前の画像座標への回転
+    mat_rot = tf.transpose(mat_rot_inv, perm=[0,2,1]) #[b,2,2] 切り取り前の画像座標から、切り取り後の画像座標への回転
 
     ######################################
     # get crop size and center
     ######################################
     subset_idxs = custom_options['subset_idxs'] #[80]
     landmarks2d_subset = tf.gather(landmarks2d, indices=subset_idxs, axis=1) #[b,80,2]
-    landmarks2d_subset_rotated = tf.matmul(landmarks2d_subset, mat_rot) #[b,80,2] use mat_rot to avoid transposing
+    landmarks2d_subset_rotated = tf.matmul(landmarks2d_subset, mat_rot) #[b,80,2] 切り取り前の画像上でのLandmark座標を、切り取り後の画像上でのLandmark座標に変換
     landmarks2d_subset_rotated_min = tf.reduce_min(landmarks2d_subset_rotated, axis=1) #[b,2]
     landmarks2d_subset_rotated_max = tf.reduce_max(landmarks2d_subset_rotated, axis=1) #[b,2]
 
     # return values
     crop_size = tf.subtract(landmarks2d_subset_rotated_max, landmarks2d_subset_rotated_min) #[b,2], max - min
-    #center = tf.multiply(tf.add(landmarks2d_subset_rotated_min, landmarks2d_subset_rotated_max), tf.constant(0.5)) #[b,2], 1/2 * (max + min)
+    center = tf.multiply(tf.add(landmarks2d_subset_rotated_min, landmarks2d_subset_rotated_max), tf.constant(0.5)) #[b,2], 1/2 * (max + min)
+    center = tf.expand_dims(center, axis=1) #[b,1,2]
+    center = tf.matmul(center, mat_rot_inv) #[b,1,2] 切り取り後の画像座標から、切り取り前の画像座標に変換
 
     ######################################
     # get mat
@@ -164,16 +167,22 @@ def Landmarks2TransformMatrix(operator, custom_options, tensors, interpreter):
     scale_y = custom_options['scale_y']
     scalingFactor_x = scale_x / output_w
     scalingFactor_y = scale_y / output_h
-    scalingFactor = tf.constant([[scalingFactor_x, scalingFactor_y]]) #[b,2]
+    scalingFactor = tf.constant([[scalingFactor_x, scalingFactor_y]]) #[1,2]
     scale = tf.multiply(scalingFactor, crop_size) #[b,2]
-    scale = tf.expand_dims(scale, axis=1) #[b,1,2] 
+    #scale = tf.expand_dims(scale, axis=1) #[b,1,2] 
 
     # mat = [[ sx*dx, -sy*dy, 0, tx],
     #        [ sx*dy,  sy*dx, 0, ty]]
-    translation = tf.expand_dims(landmarks2d_subset_rotated_min, axis=1) #[b,1,2]
-    b = translation.shape[0]
+    sxu = tf.multiply(u, scale[:,0])
+    syv = tf.multiply(v, scale[:,1])
     zeros = tf.zeros([b, 1, 2])
-    mat = tf.concat([tf.multiply(scale, u), tf.multiply(scale, v), zeros, translation], axis=1) #[b,4,2]
+
+    shift_scale = tf.constant([[scale_x * 0.5, scale_y * 0.5]]) #[1,2]
+    shift = tf.multiply(shift_scale, crop_size) #[b,2]
+    shift = tf.expand_dims(shift, axis=1) #[b,1,2]
+    translation = tf.subtract(center, shift) #[b,1,2]
+
+    mat = tf.concat([sxu, syv, zeros, translation], axis=1) #[b,4,2]
     mat = tf.transpose(mat, perm=[0,2,1]) #[b,2,4]
 
     # mat = [[ sx*dx, -sy*dy, 0, tx],
