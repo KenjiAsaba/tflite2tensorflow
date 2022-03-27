@@ -91,6 +91,10 @@ def TransformTensorBilinear(operator, custom_options, tensors, interpreter, feat
     in_coord_ceil_ = tf.maximum(in_coord_ceil_, zero_zeros) #[b,h,w,2]
 
     # calc final pixel value
+    in_coord_floor = tf.stack([in_coord_floor[:,:,:,1], in_coord_floor[:,:,:,0]], axis=3)
+    in_coord_ceilX = tf.stack([in_coord_ceilX[:,:,:,1], in_coord_ceilX[:,:,:,0]], axis=3)
+    in_coord_ceilY = tf.stack([in_coord_ceilY[:,:,:,1], in_coord_ceilY[:,:,:,0]], axis=3)
+    in_coord_ceil_ = tf.stack([in_coord_ceil_[:,:,:,1], in_coord_ceil_[:,:,:,0]], axis=3)
     value_floor = tf.gather_nd(params=features, indices=in_coord_floor, batch_dims=1) #[b,h,w,32]
     value_ceilX = tf.gather_nd(params=features, indices=in_coord_ceilX, batch_dims=1) #[b,h,w,32]
     value_ceilY = tf.gather_nd(params=features, indices=in_coord_ceilY, batch_dims=1) #[b,h,w,32]
