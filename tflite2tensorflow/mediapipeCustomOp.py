@@ -12,7 +12,7 @@ def TransformLandmarks(operator, custom_options, tensors, interpreter, landmarks
     # extract important values
     mat_rot = mat[:,0:2,0:2] #[b,2,2]
     translation = mat[:,0:2,3] #[b,2]
-    translation = tf.expand_dims(translation, axis=1) #[1,1,2]
+    translation = tf.expand_dims(translation, axis=1) #[b,1,2]
 
     # Find the corresponding point in the input image
     landmarks2d_transformed = tf.matmul(landmarks2d, mat_rot, transpose_b=True) #[b,80,2]
@@ -21,10 +21,10 @@ def TransformLandmarks(operator, custom_options, tensors, interpreter, landmarks
 
 #TODO test
 #Affine transform tensor. Interpolate values by bilinear.
-def TransformTensorBilinear(operator, custom_options, tensors, interpreter):
+def TransformTensorBilinear(operator, custom_options, tensors, interpreter, features, mat):
     # get args
-    features = tensors[operator['inputs'][0]] #float32 [b,48,48,32] feature maps
-    mat = tensors[operator['inputs'][1]] #float32 [b,4,4] affine transform matrix
+    #features = tensors[operator['inputs'][0]] #float32 [b,48,48,32] feature maps
+    #mat = tensors[operator['inputs'][1]] #float32 [b,4,4] affine transform matrix
     w = custom_options['output_width']
     h = custom_options['output_height']
     b = features.shape[0]
@@ -34,12 +34,12 @@ def TransformTensorBilinear(operator, custom_options, tensors, interpreter):
     # extract important values
     mat_rot = mat[:,0:2,0:2] #[b,2,2]
     translation = mat[:,0:2,3] #[b,2]
-    translation = tf.expand_dims(translation, axis=1) #[1,1,2]
-    translation = tf.expand_dims(translation, axis=1) #[1,1,1,2]
+    translation = tf.expand_dims(translation, axis=1) #[b,1,2]
+    translation = tf.expand_dims(translation, axis=1) #[b,1,1,2]
 
     # construct const tensors
     ones = tf.ones([b, h, w], dtype=tf.int32) #[b,h,w]
-    zeros = tf.ones([b, h, w], dtype=tf.int32) #[b,h,w]
+    zeros = tf.zeros([b, h, w], dtype=tf.int32) #[b,h,w]
     one_zeros = tf.stack([ones, zeros], axis=3) #[b,h,w,2] = [[[1,0], [1,0] ...
     zero_ones = tf.stack([zeros, ones], axis=3) #[b,h,w,2] = [[[0,1], [0,1] ...
     one_ones = tf.ones([b, h, w, 2], dtype=tf.int32) #[b,h,w,2] = [[[1,1], [1,1] ...
@@ -76,7 +76,7 @@ def TransformTensorBilinear(operator, custom_options, tensors, interpreter):
     weight_floor = tf.expand_dims(weight_floor, axis=3) #[b,h,w,1]
 
     # Find nearest 4 points. 
-    in_coord_floor = tf.cast(out_coord, dtype=tf.int32)
+    in_coord_floor = tf.cast(in_coord_floor, dtype=tf.int32)
     in_coord_ceilX = tf.add(in_coord_floor, one_zeros) #[b,h,w,2]
     in_coord_ceilY = tf.add(in_coord_floor, zero_ones) #[b,h,w,2]
     in_coord_ceil_ = tf.add(in_coord_floor, one_ones) #[b,h,w,2]
@@ -165,21 +165,26 @@ def Landmarks2TransformMatrix(operator, custom_options, tensors, interpreter, la
     output_h = custom_options['output_height']
     scale_x = custom_options['scale_x']
     scale_y = custom_options['scale_y']
-    scalingFactor_x = scale_x / output_w
-    scalingFactor_y = scale_y / output_h
-    scalingFactor = tf.constant([[scalingFactor_x, scalingFactor_y]]) #[1,2]
-    scale = tf.multiply(scalingFactor, crop_size) #[b,2]
+    scaling_const_x = scale_x / output_w
+    scaling_const_y = scale_y / output_h
+    scaling_const = tf.constant([[scaling_const_x, scaling_const_y]]) #[1,2]
+    scale = tf.multiply(scaling_const, crop_size) #[b,2]
     #scale = tf.expand_dims(scale, axis=1) #[b,1,2] 
 
     # mat = [[ sx*dx, -sy*dy, 0, tx],
     #        [ sx*dy,  sy*dx, 0, ty]]
-    sxu = tf.multiply(u, scale[:,0])
-    syv = tf.multiply(v, scale[:,1])
+    sxu = tf.multiply(u, scale[:,0]) #[b,1,2]
+    syv = tf.multiply(v, scale[:,1]) #[b,1,2]
     zeros = tf.zeros([b, 1, 2])
 
-    shift_scale = tf.constant([[scale_x * 0.5, scale_y * 0.5]]) #[1,2]
-    shift = tf.multiply(shift_scale, crop_size) #[b,2]
-    shift = tf.expand_dims(shift, axis=1) #[b,1,2]
+    #shift_scaling_const = tf.constant([[scale_x * 0.5, scale_y * 0.5]]) #[1,2]
+    #shift_scale = tf.multiply(shift_scaling_const, crop_size) #[b,2]
+    #shift_scale = tf.expand_dims(shift_scale, axis=1) #[b,1,2]
+    #translation = tf.subtract(center, shift) #[b,1,2]
+
+    shift_u = tf.multiply(sxu, output_w * 0.5) #[b,1,2]
+    shift_v = tf.multiply(syv, output_h * 0.5) #[b,1,2]
+    shift = tf.add(shift_u, shift_v) #[b,1,2]
     translation = tf.subtract(center, shift) #[b,1,2]
 
     mat = tf.concat([sxu, syv, zeros, translation], axis=1) #[b,4,2]
