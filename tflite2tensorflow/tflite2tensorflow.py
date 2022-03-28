@@ -6359,7 +6359,7 @@ def main():
             try:
                 print(f'{Color.REVERCE}ONNX convertion started{Color.RESET}', '=' * 61)
                 loaded = tf.saved_model.load(model_output_path).signatures['serving_default']
-                inputs = ",".join(map(str, [inp.name for inp in loaded.inputs if 'unknown' not in inp.name]))
+                inputs = ",".join(map(str, [inp.name for inp in loaded.inputs if 'unknown' not in inp.name])).rstrip(',')
                 try:
                     onnx_convert_command = None
                     if not onnx_extra_opset:
@@ -6373,7 +6373,10 @@ def main():
                         ]
                         if use_onnx_nchw_conversion:
                             onnx_convert_command.append(
-                                '--inputs-as-nchw', f'{inputs}'
+                                '--inputs-as-nchw'
+                            )
+                            onnx_convert_command.append(
+                                f'{inputs}'
                             )
                     else:
                         onnx_convert_command = \
@@ -6387,7 +6390,10 @@ def main():
                         ]
                         if use_onnx_nchw_conversion:
                             onnx_convert_command.append(
-                                '--inputs-as-nchw', f'{inputs}'
+                                '--inputs-as-nchw'
+                            )
+                            onnx_convert_command.append(
+                                f'{inputs}'
                             )
                     result = subprocess.check_output(
                         onnx_convert_command,
