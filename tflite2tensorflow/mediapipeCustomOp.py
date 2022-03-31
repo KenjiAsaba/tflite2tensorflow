@@ -110,8 +110,8 @@ def TransformTensorBilinear(operator, custom_options, tensors, interpreter, opti
     weight_floor = tf.subtract(tf.ones(2), weight_ceil_) #[b,h,w,2]
     weight_ceilX = tf.multiply(weight_ceil_[:,:,:,0:1], weight_floor[:,:,:,1:2]) #[b,h,w]
     weight_ceilY = tf.multiply(weight_floor[:,:,:,0:1], weight_ceil_[:,:,:,1:2]) #[b,h,w]
-    weight_ceil_ = tf.reduce_prod(weight_ceil_, axis=3, keepdims=True) #[b,h,w,1]
-    weight_floor = tf.reduce_prod(weight_floor, axis=3, keepdims=True) #[b,h,w,1]
+    weight_ceil_ = tf.multiply(weight_ceil_[:,:,:,0:1], weight_ceil_[:,:,:,1:2]) #[b,h,w]
+    weight_floor = tf.multiply(weight_floor[:,:,:,0:1], weight_floor[:,:,:,1:2]) #[b,h,w]
 
     # Find nearest 4 points.
     # Make sure they are in the input image
