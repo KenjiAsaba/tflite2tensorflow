@@ -117,11 +117,11 @@ def TransformTensorBilinear(operator, custom_options, tensors, interpreter, opti
     # Make sure they are in the input image
     in_coord_floor = tf.cast(in_coord_floor, dtype=tf.int32) #[b,h,w,XY]
     in_coord_floor = tf.maximum(in_coord_floor, tf.zeros(2, dtype=tf.int32)) #[b,h,w,XY]
-    in_coord_floor = tf.minimum(in_coord_floor, [input_w, input_h]) #[b,h,w,XY]
+    in_coord_floor = tf.minimum(in_coord_floor, [input_w - 1, input_h - 1]) #[b,h,w,XY]
 
     in_coord_ceil_ = tf.add(in_coord_floor, tf.ones(2, dtype=tf.int32)) #[b,h,w,XY]
     # in_coord_ceil_ = tf.maximum(in_coord_ceil_, tf.zeros(2, dtype=tf.int32)) #[b,h,w,XY]
-    in_coord_ceil_ = tf.minimum(in_coord_ceil_, [input_w, input_h]) #[b,h,w,XY]
+    in_coord_ceil_ = tf.minimum(in_coord_ceil_, [input_w - 1, input_h - 1]) #[b,h,w,XY]
 
     in_coord_ceilX = tf.concat([in_coord_floor[:,:,:,1:2], in_coord_ceil_[:,:,:,0:1]], axis=3) #[b,h,w,YX] YX for BHWC
     in_coord_ceilY = tf.concat([in_coord_ceil_[:,:,:,1:2], in_coord_floor[:,:,:,0:1]], axis=3) #[b,h,w,YX]
